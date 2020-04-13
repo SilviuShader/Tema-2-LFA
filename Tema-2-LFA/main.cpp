@@ -25,5 +25,10 @@ int main()
     cout << "DFA: " << endl;
     cout << nfa << endl;
 
+    nfa.Minimize();
+    
+    cout << "Minimized DFA: " << endl;
+    cout << nfa << endl;
+
     return 0;
 }

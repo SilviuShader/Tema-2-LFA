@@ -2,6 +2,7 @@
 
 #include <utility>
 #include <vector>
+#include <map>
 #include <unordered_map>
 #include <set>
 #include <istream>
@@ -31,13 +32,18 @@ public:
 
     void RemoveLambda();
     void ToDFA();
+    void Minimize();
 
     friend std::istream& operator>>(std::istream&, NFA&);
     friend std::ostream& operator<<(std::ostream&, NFA&);
 
 private:
 
-    std::vector<int> GetLambdaClosure(int);
+    std::vector<int>              GetLambdaClosure(int);
+    std::vector<std::vector<int>> GetReverseLinks();
+    void                          FilterNodes(bool*);
+    void                          GetAutomataGroups(std::map<std::pair<bool, std::set<std::pair<char, int>>>, std::vector<int>>&,
+                                                    std::vector<std::pair<bool, std::set<std::pair<char, int>>>>&);
 
 private:
 

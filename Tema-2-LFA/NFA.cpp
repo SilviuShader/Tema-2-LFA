@@ -156,6 +156,141 @@ void NFA::ToDFA()
     }
 }
 
+void NFA::Minimize()
+{
+    vector<vector<int>> reverseLinks = GetReverseLinks();
+ 
+    bool* initialVisited = new bool[m_graph.size()];
+    bool* endVisited = new bool[m_graph.size()];
+    bool* visited = new bool[m_graph.size()];
+
+    memset(initialVisited, 0, sizeof(bool) * m_graph.size());
+    memset(endVisited, 0, sizeof(bool) * m_graph.size());
+    memset(visited, 0, sizeof(bool) * m_graph.size());
+
+    visited[m_q0] = true;
+    initialVisited[m_q0] = true;
+    queue<int> remainingNodes;
+    remainingNodes.push(m_q0);
+    
+    while (!remainingNodes.empty())
+    {
+        int crtNode = remainingNodes.front();
+        remainingNodes.pop();
+
+        for (auto nextPair : m_graph[crtNode].nextNodes)
+        {
+            int nextNode = nextPair.first;
+            if (!visited[nextNode])
+            {
+                visited[nextNode] = true;
+                initialVisited[nextNode] = true;
+                remainingNodes.push(nextNode);
+            }
+        }
+    }
+
+    for (int i = 0; i < m_graph.size(); i++)
+    {
+        if (m_graph[i].ending)
+        {
+            memset(visited, 0, sizeof(bool) * m_graph.size());
+            
+            remainingNodes.push(i);
+            
+            visited[i] = true;
+            endVisited[i] = true;
+            
+            while (!remainingNodes.empty())
+            {
+                int crtNode = remainingNodes.front();
+                remainingNodes.pop();
+
+                for (int j = 0; j < reverseLinks[crtNode].size(); j++)
+                {
+                    int prevNode = reverseLinks[crtNode][j];
+
+                    if (!visited[prevNode])
+                    {
+                        visited[prevNode] = true;
+                        endVisited[prevNode] = true;
+                        remainingNodes.push(prevNode);
+                    }
+                }
+            }
+        }
+    }
+
+    bool* keep = new bool[m_graph.size()];
+    memset(keep, 0, sizeof(bool) * m_graph.size());
+
+    for (int i = 0; i < m_graph.size(); i++)
+    {
+        if (initialVisited[i] && endVisited[i])
+            keep[i] = true;
+    }
+
+    FilterNodes(keep);
+    
+    map<pair<bool, set<pair<char, int>>>, vector<int>> nodeGroups;
+    vector<pair<bool, set<pair<char, int>>>> nodeKeys;
+
+    GetAutomataGroups(nodeGroups, nodeKeys);
+
+    map<pair<bool, set<pair<char, int>>>, int> newIndices;
+    int index = 0;
+
+    for (auto keyValue : nodeGroups)
+        newIndices[keyValue.first] = index++;
+
+    vector<Node> newGraph;
+    newGraph.resize(index);
+
+    index = 0;
+
+    for (auto keyValue : nodeGroups)
+    {
+        pair<bool, set<pair<char, int>>> key = keyValue.first;
+        newGraph[index].ending = key.first;
+
+        vector<int>& val = keyValue.second;
+        
+        for (int i = 0; i < val.size(); i++)
+            if (val[i] == m_q0)
+                m_q0 = index;
+
+        if (val.size() != 0)
+        {
+            int crtNode = val[0];
+            
+            for (auto nodePair : m_graph[crtNode].nextNodes)
+            {
+                pair<bool, set<pair<char, int>>> nextKey = nodeKeys[nodePair.first];
+                int nextIndex = newIndices[nextKey];
+                newGraph[index].nextNodes.push_back(make_pair(nextIndex, nodePair.second));
+            }
+        }
+
+        index++;
+    }
+
+    // now fill the data required for the new graph
+    for (int i = 0; i < newGraph.size(); i++)
+    {
+        for (auto nodePair : newGraph[i].nextNodes)
+        {
+            newGraph[i].gotLink.insert(nodePair);
+
+            if (newGraph[i].links.find(nodePair.second) == newGraph[i].links.end())
+                newGraph[i].links[nodePair.second] = vector<int>();
+
+            newGraph[i].links[nodePair.second].push_back(nodePair.first);
+        }
+    }
+
+    m_graph = move(newGraph);
+}
+
 vector<int> NFA::GetLambdaClosure(int node)
 {
     vector<int> closure = vector<int>();
@@ -190,6 +325,90 @@ vector<int> NFA::GetLambdaClosure(int node)
     visitedNode = NULL;
 
     return closure;
+}
+
+vector<vector<int>> NFA::GetReverseLinks()
+{
+    vector<vector<int>> result;
+    result.resize(m_graph.size());
+
+    for (int i = 0; i < m_graph.size(); i++)
+        for (auto nodePair : m_graph[i].nextNodes)
+            result[nodePair.first].push_back(i);
+
+    return result;
+}
+
+void NFA::FilterNodes(bool* keep)
+{
+    unordered_map<int, int> swaps;
+    int index = 0;
+
+    for (int i = 0; i < m_graph.size(); i++)
+        if (keep[i])
+        {
+            swaps[i] = index;
+            index++;
+        }
+
+    vector<Node> newGraph;
+    newGraph.resize(index);
+
+    index = 0;
+    for (int i = 0; i < m_graph.size(); i++)
+        if (keep[i])
+        {
+            newGraph[index].ending = m_graph[i].ending;
+
+            if (i == m_q0)
+                m_q0 = index;
+
+            for (auto nodePair : m_graph[i].nextNodes)
+                if (swaps.find(nodePair.first) != swaps.end())
+                {
+                    pair<int, char> nextLink = make_pair(swaps[nodePair.first], nodePair.second);
+                    newGraph[index].nextNodes.push_back(nextLink);
+                }
+
+            index++;
+        }
+
+    // now fill the data required for the new graph
+    for (int i = 0; i < newGraph.size(); i++)
+    {
+        for (auto nodePair : newGraph[i].nextNodes)
+        {
+            newGraph[i].gotLink.insert(nodePair);
+            
+            if (newGraph[i].links.find(nodePair.second) == newGraph[i].links.end())
+                newGraph[i].links[nodePair.second] = vector<int>();
+
+            newGraph[i].links[nodePair.second].push_back(nodePair.first);
+        }
+    }
+
+    m_graph = move(newGraph);
+}
+
+void NFA::GetAutomataGroups(map<pair<bool, set<pair<char, int>>>, vector<int>>& groups, 
+                            vector<pair<bool, set<pair<char, int>>>>&           nodeKeys)
+{
+    nodeKeys.resize(m_graph.size());
+
+    for (int i = 0; i < m_graph.size(); i++)
+    {
+        pair<bool, set<pair<char, int>>> currentKey;
+        currentKey.first = m_graph[i].ending;
+
+        for (auto nodePair : m_graph[i].nextNodes)
+            currentKey.second.insert(make_pair(nodePair.second, nodePair.first));
+
+        nodeKeys[i] = currentKey;
+
+        if (groups.find(currentKey) == groups.end())
+            groups[currentKey] = vector<int>();
+        groups[currentKey].push_back(i);
+    }
 }
 
 istream& operator>>(istream& in, NFA& nfa)
