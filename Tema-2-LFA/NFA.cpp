@@ -232,47 +232,33 @@ void NFA::Minimize()
 
     FilterNodes(keep);
     
-    map<pair<bool, set<pair<char, int>>>, vector<int>> nodeGroups;
-    vector<pair<bool, set<pair<char, int>>>> nodeKeys;
+    vector<set<int>> nodeGroups;
+    vector<int>      whichSets;
 
-    GetAutomataGroups(nodeGroups, nodeKeys);
-
-    map<pair<bool, set<pair<char, int>>>, int> newIndices;
-    int index = 0;
-
-    for (auto keyValue : nodeGroups)
-        newIndices[keyValue.first] = index++;
-
+    GetAutomataGroups(nodeGroups, whichSets);
+    
     vector<Node> newGraph;
-    newGraph.resize(index);
+    newGraph.resize(nodeGroups.size());
 
-    index = 0;
+    int newInitial = m_q0;
 
-    for (auto keyValue : nodeGroups)
+    for (int i = 0; i < nodeGroups.size(); i++)
     {
-        pair<bool, set<pair<char, int>>> key = keyValue.first;
-        newGraph[index].ending = key.first;
-
-        vector<int>& val = keyValue.second;
-        
-        for (int i = 0; i < val.size(); i++)
-            if (val[i] == m_q0)
-                m_q0 = index;
-
-        if (val.size() != 0)
+        auto& group = nodeGroups[i];
+        if (!group.empty())
         {
-            int crtNode = val[0];
+            int node = *group.begin();
+            if (node == m_q0)
+                newInitial = i;
             
-            for (auto nodePair : m_graph[crtNode].nextNodes)
-            {
-                pair<bool, set<pair<char, int>>> nextKey = nodeKeys[nodePair.first];
-                int nextIndex = newIndices[nextKey];
-                newGraph[index].nextNodes.push_back(make_pair(nextIndex, nodePair.second));
-            }
-        }
+            newGraph[i].ending = m_graph[node].ending;
 
-        index++;
+            for (auto& nodePair : m_graph[node].nextNodes)
+                newGraph[i].nextNodes.push_back(make_pair(whichSets[nodePair.first], nodePair.second));
+        }
     }
+
+    m_q0 = newInitial;
 
     // now fill the data required for the new graph
     for (int i = 0; i < newGraph.size(); i++)
@@ -390,25 +376,76 @@ void NFA::FilterNodes(bool* keep)
     m_graph = move(newGraph);
 }
 
-void NFA::GetAutomataGroups(map<pair<bool, set<pair<char, int>>>, vector<int>>& groups, 
-                            vector<pair<bool, set<pair<char, int>>>>&           nodeKeys)
+void NFA::GetAutomataGroups(vector<set<int>>& groups, 
+                            vector<int>&      nodeKeys)
 {
-    nodeKeys.resize(m_graph.size());
+    vector<set<int>> prevP;
+    vector<int> whichSet;
+    prevP.resize(2);
+    whichSet.resize(m_graph.size());
 
     for (int i = 0; i < m_graph.size(); i++)
     {
-        pair<bool, set<pair<char, int>>> currentKey;
-        currentKey.first = m_graph[i].ending;
-
-        for (auto nodePair : m_graph[i].nextNodes)
-            currentKey.second.insert(make_pair(nodePair.second, nodePair.first));
-
-        nodeKeys[i] = currentKey;
-
-        if (groups.find(currentKey) == groups.end())
-            groups[currentKey] = vector<int>();
-        groups[currentKey].push_back(i);
+        if (m_graph[i].ending)
+        {
+            prevP[1].insert(i);
+            whichSet[i] = 1;
+        }
+        else
+        {
+            prevP[0].insert(i);
+            whichSet[i] = 0;
+        }
     }
+    vector<set<int>> p;
+    bool same = false;
+
+    while (!same)
+    {
+        for (int i = 0; i < prevP.size(); i++)
+        {
+            auto& subset = prevP[i];
+            map<set<pair<char, int>>, vector<int>> generatedSubsets;
+            for (auto& node : subset)
+            {
+                set<pair<char, int>> nodeSubset;
+                for (auto& nodePair : m_graph[node].nextNodes)
+                {
+                    nodeSubset.insert(make_pair(nodePair.second, whichSet[nodePair.first]));
+                }
+                if (generatedSubsets.find(nodeSubset) == generatedSubsets.end())
+                    generatedSubsets[nodeSubset] = vector<int>();
+                generatedSubsets[nodeSubset].push_back(node);
+            }
+
+            for (auto& genSub : generatedSubsets)
+            {
+                set<int> crtSet = set<int>();
+                for (auto& node : genSub.second)
+                    crtSet.insert(node);
+                p.push_back(crtSet);
+            }
+        }
+
+        for (int i = 0; i < p.size(); i++)
+            for (auto& node : p[i])
+                whichSet[node] = i;
+
+        if (p.size() == prevP.size())
+        {
+            bool sm = true;
+            for (int i = 0; i < p.size(); i++)
+                if (p[i] != prevP[i])
+                    sm = false;
+
+            same = sm;
+        }
+
+        prevP = move(p);
+    }
+
+    groups   = move(prevP);
+    nodeKeys = move(whichSet);
 }
 
 istream& operator>>(istream& in, NFA& nfa)

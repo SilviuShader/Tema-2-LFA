@@ -42,8 +42,8 @@ private:
     std::vector<int>              GetLambdaClosure(int);
     std::vector<std::vector<int>> GetReverseLinks();
     void                          FilterNodes(bool*);
-    void                          GetAutomataGroups(std::map<std::pair<bool, std::set<std::pair<char, int>>>, std::vector<int>>&,
-                                                    std::vector<std::pair<bool, std::set<std::pair<char, int>>>>&);
+    void                          GetAutomataGroups(std::vector<std::set<int>>&,
+                                                    std::vector<int>&);
 
 private:
 
